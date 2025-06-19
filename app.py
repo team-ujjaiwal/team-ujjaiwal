@@ -1,7 +1,9 @@
 from flask import Flask, request, jsonify
 import requests
-import time
 from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich import print as rprint
 from rich.progress import Progress
 
 app = Flask(__name__)
@@ -10,7 +12,7 @@ console = Console()
 def check_player_info(target_id):
     with Progress() as progress:
         task = progress.add_task("[cyan]Fetching player data...", total=100)
-
+        
         cookies = {
             '_ga': 'GA1.1.2123120599.1674510784',
             '_fbp': 'fb.1.1674510785537.363500115',
@@ -44,21 +46,53 @@ def check_player_info(target_id):
         }
 
         try:
-            progress.update(task, advance=50)
-            res = requests.post('https://shop2game.com/api/auth/player_id_login',
-                                cookies=cookies, headers=headers, json=json_data)
+            progress.update(task, advance=30)
+            res = requests.post('https://shop2game.com/api/auth/player_id_login', 
+                              cookies=cookies, headers=headers, json=json_data)
 
             if res.status_code != 200 or not res.json().get('nickname'):
                 return {"error": "ID NOT FOUND"}
 
-            progress.update(task, advance=50)
             player_data = res.json()
             nickname = player_data.get('nickname', 'N/A')
             region = player_data.get('region', 'N/A')
 
+            progress.update(task, advance=35)
+
+            ban_url = f'https://ff.garena.com/api/antihack/check_banned?lang=en&uid={target_id}'
+            ban_response = requests.get(ban_url, headers={
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'authority': 'ff.garena.com',
+                'accept-language': 'en-GB,en-US;q=0.9,en;q=0.8',
+                'referer': 'https://ff.garena.com/en/support/',
+                'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120"',
+                'sec-ch-ua-mobile': '?1',
+                'sec-ch-ua-platform': '"Android"',
+                'sec-fetch-dest': 'empty',
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-site': 'same-origin',
+                'x-requested-with': 'B6FksShzIgjfrYImLpTsadjS86sddhFH',
+            })
+
+            progress.update(task, advance=35)
+            ban_data = ban_response.json()
+
+            if ban_data["status"] == "success" and "data" in ban_data:
+                is_banned = ban_data["data"].get("is_banned", 0)
+                period = ban_data["data"].get("period", 0)
+
+                if is_banned:
+                    ban_message = f"Banned for {period} months" if period > 0 else "Banned indefinitely"
+                else:
+                    ban_message = "Not banned"
+            else:
+                return {"error": "Failed to retrieve ban status"}
+
             return {
                 "nickname": nickname,
-                "region": region
+                " uid": target_id, 
+                "region": region,
             }
 
         except requests.exceptions.RequestException as e:
@@ -68,33 +102,13 @@ def check_player_info(target_id):
 def get_region_info():
     uid = request.args.get('uid')
     if not uid:
-        return jsonify({
-            "status": "error",
-            "message": "UID parameter is required",
-            "credit": "@Ujjaiwal",
-            "channel": "https://t.me/GlobleEarth_Gaming"
-        }), 400
+        return jsonify({"error": "UID parameter is required"}), 400
 
-    start_time = time.time()
     result = check_player_info(uid)
-    end_time = time.time()
-
     if "error" in result:
-        return jsonify({
-            "status": "error",
-            "message": result["error"],
-            "credit": "@Ujjaiwal",
-            "channel": "https://t.me/GlobleEarth_Gaming"
-        }), 404
+        return jsonify(result), 404
 
-    return jsonify({
-        "status": "success",
-        "message": "Player region fetched successfully",
-        "response_time_ms": int((end_time - start_time) * 1000),
-        "credit": "@Ujjaiwal",
-        "channel": "https://t.me/GlobleEarth_Gaming",
-        "data": result
-    })
+    return jsonify(result)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
