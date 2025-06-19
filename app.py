@@ -91,8 +91,8 @@ def check_player_info(target_id):
 
             return {
                 "nickname": nickname,
-                " uid": target_id, 
                 "region": region,
+                "uid": target_id, 
             }
 
         except requests.exceptions.RequestException as e:
